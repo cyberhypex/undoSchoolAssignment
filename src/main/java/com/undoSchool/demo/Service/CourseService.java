@@ -3,7 +3,11 @@ package com.undoSchool.demo.Service;
 
 import com.undoSchool.demo.Model.CourseDocument;
 
+import com.undoSchool.demo.Model.CourseSearchResponse;
+import com.undoSchool.demo.dtos.CourseSummaryDTO;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.SearchHit;
@@ -91,6 +95,68 @@ public class CourseService {
                 .collect(Collectors.toList());
     }
 
+    public CourseSearchResponse searchCourses(
+            String keyword,
+            Integer minAge,
+            Integer maxAge,
+            String category,
+            String type,
+            Double minPrice,
+            Double maxPrice,
+            Instant startDate,
+            String sort,
+            int page,
+            int size
+    ) {
+        Criteria criteria = new Criteria();
 
+        if (keyword != null && !keyword.isBlank()) {
+            criteria = criteria.and(new Criteria().or("title").matches(keyword).or("description").matches(keyword));
+        }
+        if (minAge != null) criteria = criteria.and("minAge").greaterThanEqual(minAge);
+        if (maxAge != null) criteria = criteria.and("maxAge").lessThanEqual(maxAge);
+        if (category != null) criteria = criteria.and("category").is(category);
+        if (type != null) criteria = criteria.and("type").is(type);
+        if (minPrice != null) criteria = criteria.and("price").greaterThanEqual(minPrice);
+        if (maxPrice != null) criteria = criteria.and("price").lessThanEqual(maxPrice);
+        if (startDate != null) criteria = criteria.and("nextSessionDate").greaterThanEqual(startDate);
 
+        Query query = new CriteriaQuery(criteria);
+
+        // Sorting
+        if (sort != null) {
+            switch (sort) {
+                case "priceAsc" -> query.addSort(Sort.by("price").ascending());
+                case "priceDesc" -> query.addSort(Sort.by("price").descending());
+                case "upcoming" -> query.addSort(Sort.by("nextSessionDate").ascending());
+            }
+        }
+
+        // Pagination
+        query.setPageable(PageRequest.of(page, size));
+
+        SearchHits<CourseDocument> hits = elasticsearchOperations.search(query, CourseDocument.class);
+
+        List<CourseSummaryDTO> summaries = hits.stream()
+                .map(hit -> {
+                    CourseDocument doc = hit.getContent();
+                    return new CourseSummaryDTO(
+                            doc.getId(),
+                            doc.getTitle(),
+                            doc.getCategory(),
+                            doc.getPrice(),
+                            doc.getNextSessionDate()
+                    );
+                })
+                .collect(Collectors.toList());
+
+        return new CourseSearchResponse(hits.getTotalHits(), summaries);
+    }
 }
+
+
+
+
+
+
+
